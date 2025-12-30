@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>PINE FOREST | 11基地智慧閉環終端 (還原數據版)</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root { --neon: #00f2ff; --forest: #39ff14; --bg: #000a15; --panel: rgba(0,25,50,0.98); --card: rgba(255,255,255,0.06); }
+        body, html { margin: 0; padding: 0; background: var(--bg); color: #fff; font-family: 'Segoe UI', 'PingFang TC', sans-serif; overflow: hidden; }
+        
+        .grid { position: fixed; width: 100%; height: 100%; background: linear-gradient(rgba(0,242,255,0.05) 1px, transparent 1px) 0 0 / 40px 40px; z-index: -1; }
+        .scanline { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(to bottom, transparent 50%, rgba(0,242,255,0.02) 50%); background-size: 100% 4px; z-index: 1000; pointer-events: none; }
+
+        .content-box { display: flex; width: 97%; height: 92vh; gap: 20px; margin: 4vh auto; }
+        
+        /* 地圖區域：黑底白線科技風格 */
+        .map-area { flex: 1.1; background: #000; border: 1.5px solid rgba(0,242,255,0.3); border-radius: 20px; position: relative; overflow: hidden; z-index: 1; }
+        #map-engine { width: 100%; height: 100%; background: #000; }
+
+        /* 彈窗 UI：還原您原本的樣式與佈局 */
+        #base-detail { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--panel); z-index: 1001; display: none; flex-direction: column; padding: 30px; box-sizing: border-box; border-radius: 20px; }
+        .base-img { width: 100%; height: 250px; object-fit: cover; border-radius: 15px; border: 1px solid var(--neon); margin-bottom: 20px; }
+        .base-iot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        .iot-stat { background: rgba(255,255,255,0.05); padding: 15px; border-radius: 10px; border-left: 3px solid var(--forest); }
+
+        /* 右側面板：100% 還原 */
+        .panel { flex: 1.6; background: var(--panel); border: 1px solid var(--neon); border-radius: 20px; display: flex; flex-direction: column; padding: 25px; overflow-y: auto; scrollbar-width: none; }
+        .section-header { border-bottom: 1.5px solid var(--neon); padding-bottom: 10px; margin-bottom: 20px; }
+        .tech-item { background: var(--card); border: 1px solid rgba(255,255,255,0.1); padding: 15px; border-radius: 12px; margin-bottom: 10px; border-left: 4px solid var(--neon); }
+        .tech-info h4 { margin: 0; font-size: 0.95rem; color: #fff; }
+        .tech-info p { margin: 4px 0 0 0; font-size: 0.8rem; color: #aaa; }
+        .kpi-row { display: flex; gap: 10px; margin: 10px 0 25px 0; }
+        .kpi-box { flex: 1; background: rgba(0,242,255,0.08); border: 1px solid var(--neon); padding: 12px; text-align: center; border-radius: 10px; }
+        .kpi-v { font-size: 1.4rem; color: var(--forest); font-weight: bold; display: block; }
+
+        /* 循環動畫：100% 還原 */
+        .cycle-area { border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px; position: relative; }
+        .pulse-container { display: flex; justify-content: space-between; position: relative; padding: 25px 0; height: 100px; }
+        .p-node { width: 85px; text-align: center; z-index: 2; position: relative; }
+        .p-icon { width: 50px; height: 50px; border: 1px solid var(--forest); background: #000; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 8px; font-size: 1.3rem; box-shadow: 0 0 10px rgba(57,255,20,0.2); }
+        .p-node b { font-size: 0.75rem; color: var(--forest); display: block; }
+        .p-node p { font-size: 0.65rem; color: #999; margin: 3px 0 0 0; line-height: 1.2; }
+        .p-stream { position: absolute; width: 80px; height: 2px; background: linear-gradient(90deg, transparent, var(--forest), transparent); top: 50px; z-index: 1; animation: laser 3s infinite linear; }
+        @keyframes laser { 0% { left: 10%; opacity: 0; } 50% { opacity: 1; } 100% { left: 85%; opacity: 0; } }
+
+        /* 地圖標點樣式優化 */
+        .leaflet-control-attribution, .leaflet-control-zoom { display: none !important; }
+        .glow-dot { 
+            width: 14px; height: 14px; background: var(--forest); border-radius: 50%; 
+            border: 2px solid #fff; box-shadow: 0 0 15px var(--forest), 0 0 30px var(--forest); 
+            cursor: pointer; 
+        }
+        .clean-label { 
+            background: none !important; border: none !important;
+            color: #fff !important; font-size: 13px !important; font-weight: 800 !important;
+            text-shadow: 0 0 8px var(--neon), 2px 2px 3px #000;
+            white-space: nowrap; pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="grid"></div>
+<div class="scanline"></div>
+
+<div class="content-box">
+    <div class="map-area">
+        <div id="map-engine"></div>
+        <div id="base-detail">
+            <h2 id="b-name" style="color:var(--neon); margin:0 0 20px 0;"></h2>
+            <img id="b-img" class="base-img" src="">
+            <div class="base-iot-grid" id="iot-container">
+                <div class="iot-stat" style="grid-column: span 2;"><b>實時站點溫度</b><p id="b-temp" style="font-size:1.2rem; font-weight:bold; color:var(--forest);"></p></div>
+                <div class="iot-stat" id="stat-plant"><b>🌱 種植 IOT 實時數據</b><p id="b-plant" style="font-size:0.85rem; line-height:1.5; color:#aaa;"></p></div>
+                <div class="iot-stat" id="stat-animal"><b>🐄 養殖 IOT 實時數據</b><p id="b-animal" style="font-size:0.85rem; line-height:1.5; color:#aaa;"></p></div>
+            </div>
+            <button onclick="hideBase()" style="margin-top:auto; padding:15px; background:var(--neon); border:none; border-radius:10px; font-weight:bold; cursor:pointer; color:#000;">CLOSE INTERFACE</button>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="section-header"><h2 style="color:var(--neon); margin:0;">SECTION A / 智慧生態源頭</h2></div>
+        <div class="tech-item"><div class="tech-info"><h4>01. 生物科技研發核心 (R&D)</h4><p>專利厭氧菌群與生物防治，減少 95% 化學藥劑依賴。</p></div></div>
+        <div class="tech-item"><div class="tech-info"><h4>02. AI & IoT 智能監測系統</h4><p>5G 多光譜感知與 AI 識別，預警準確率達 98.2%。</p></div></div>
+        <div class="tech-item"><div class="tech-info"><h4>03. 區塊鏈全程數據溯源</h4><p>數字身份證記錄碳足跡與品質，實現 100% 覆蓋。</p></div></div>
+        <div class="kpi-row">
+            <div class="kpi-box"><span class="kpi-v">12,450t</span><span style="font-size:9px;">年減碳量</span></div>
+            <div class="kpi-box"><span class="kpi-v">98.2%</span><span style="font-size:9px;">預警準確率</span></div>
+            <div class="kpi-box"><span class="kpi-v">100%</span><span style="font-size:9px;">溯源覆蓋</span></div>
+        </div>
+        <div class="cycle-area">
+            <div style="color:var(--forest); font-weight:bold; font-size:1rem; margin-bottom:10px;">♻️ 資源深度閉環與循環農業</div>
+            <div class="pulse-container">
+                <div class="p-line"></div><div class="p-stream"></div>
+                <div class="p-node"><div class="p-icon">💧</div><b>水資源循環</b><p>淨化後回流農場灌溉</p></div>
+                <div class="p-node"><div class="p-icon">💩</div><b>有機肥回灌</b><p>廢渣轉化肥料改土</p></div>
+                <div class="p-node"><div class="p-icon">🔥</div><b>溫室供能</b><p>沼氣轉化支撐能源</p></div>
+                <div class="p-node"><div class="p-icon">🌾</div><b>飼料循環</b><p>農副產物處理回流</p></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    // 1. 初始化地圖
+    const map = L.map('map-engine', { 
+        center: [34.0, 108.5], 
+        zoom: 4.8, 
+        zoomControl: false, 
+        attributionControl: false 
+    });
+
+    // 2. 科技黑底白線底圖疊加
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}').addTo(map);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}').addTo(map);
+
+    // 3. 數據完全還原 (從您的原始 index.html 提取)
+    const bases = [
+        { name: "甘肅", lat: 38.47, lng: 104.57, temp: '21.4°C', 
+          plant: '品種: 西瓜/番茄<br>進度: 第 82 天 (果實膨大期)<br>速度: 8.5mm/d<br>澆水: 預計 18:00 (自動滴灌)<br>土壤濕度: 32%', 
+          animal: '品種: 羊/肉牛<br>進度: 第 145 天 (育肥期)<br>增重: 1.3kg/d<br>餵食: 17:30 (TMR混合糧)<br>心率監測: 72bpm', 
+          img: 'https://images.unsplash.com/photo-1516253593875-bd7ba052fbc5?auto=format&fit=crop&w=800' },
+        
+        { name: "湖北", lat: 30.59, lng: 114.30, temp: '26.8°C', 
+          plant: '品種: 水耕菜、葉菜類<br>進度: 第 18 天 (快速生長期)<br>速度: 12mm/d<br>澆水: 循環供水中 (PH 6.2)<br>光照: 8500 Lux', animal: '', 
+          img: 'https://images.unsplash.com/photo-1558449028-b53a39d100fc?auto=format&fit=crop&w=800' },
+
+        { name: "貴州", lat: 26.58, lng: 106.71, temp: '19.5°C', 
+          plant: '品種: 豆苗/葉菜<br>進度: 第 38 天 (成熟前期)<br>速度: 5.2mm/d<br>澆水: 預計 19:00 (定時噴淋)', animal: '', 
+          img: 'https://images.unsplash.com/photo-1523348837708-15d4a09cfac2?auto=format&fit=crop&w=800' },
+
+        { name: "廣東", lat: 23.13, lng: 113.26, temp: '30.2°C', 
+          plant: '品種: 菜心/米<br>進度: 第 52 天 (抽穗期)<br>速度: 10mm/d<br>澆水: 06:00 已完成 (自動滴灌)', 
+          animal: '品種: 豬<br>進度: 第 98 天 (育成期)<br>增重: 0.85kg/d<br>餵食: 18:00 (自動投放)<br>氨氣濃度: 12ppm', 
+          img: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=800' },
+
+        { name: "山東", lat: 36.67, lng: 117.00, temp: '24.5°C', 
+          plant: '品種: 瓜果、青瓜、番茄<br>進度: 第 112 天 (盛產期)<br>速度: 穩定成長<br>澆水: 智能調節中 (濕度 65%)', animal: '', 
+          img: 'https://images.unsplash.com/photo-1585320806297-9794b3e4eeae?auto=format&fit=crop&w=800' },
+
+        { name: "江西", lat: 28.68, lng: 115.89, temp: '27.5°C', 
+          plant: '品種: 水果玉米、南瓜仔<br>進度: 第 62 天 (授粉完成期)<br>速度: 15mm/d<br>澆水: 07:00 已完成 (微噴系統)', animal: '', 
+          img: 'https://images.unsplash.com/photo-1530507629858-e4977d30e9e0?auto=format&fit=crop&w=800' },
+
+        { name: "內蒙古", lat: 40.84, lng: 111.75, temp: '18.2°C', 
+          plant: '品種: 瓜果、青瓜、番茄<br>進度: 第 88 天 (掛果穩定器)<br>速度: 正常<br>澆水: 自動溫感補水', animal: '', 
+          img: 'https://images.unsplash.com/photo-1466692476868-aef1dfb1e735?auto=format&fit=crop&w=800' },
+
+        { name: "廣西", lat: 22.82, lng: 108.32, temp: '29.8°C', plant: '', 
+          animal: '品種: 豬<br>進度: 第 85 天 (育肥前期)<br>增重: 0.92kg/d<br>餵食: 08:30 已完成 (定量系統)', 
+          img: 'https://images.unsplash.com/photo-1516467508483-a7212febe31a?auto=format&fit=crop&w=800' },
+
+        { name: "吉林", lat: 43.84, lng: 126.55, temp: '12.0°C', plant: '', 
+          animal: '品種: 肉牛<br>進度: 第 240 天 (成長中期)<br>增重: 1.5kg/d<br>餵食: 06:00 已完成 (全混合日糧)', 
+          img: 'https://images.unsplash.com/photo-1570042225831-d98fa7577f1e?auto=format&fit=crop&w=800' },
+
+        { name: "遼寧", lat: 41.80, lng: 123.43, temp: '15.5°C', plant: '', 
+          animal: '品種: 肉牛<br>進度: 第 310 天 (成熟期)<br>增重: 1.1kg/d<br>餵食: 07:00 已完成 (自動送料系統)', 
+          img: 'https://images.pexels.com/photos/422218/pexels-photo-422218.jpeg?auto=compress&cs=tinysrgb&w=800' },
+
+        { name: "河南", lat: 34.75, lng: 113.66, temp: '25.8°C', 
+          plant: '品種: 大宗糧食作物<br>進度: 第 105 天 (灌漿成熟期)<br>速度: 穩定 (衛星 NDVI 監測優)<br>澆水: 05:30 已完成', animal: '', 
+          img: 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=800' }
+    ];
+
+    // 生成地圖點位與標籤
+    bases.forEach(b => {
+        const marker = L.marker([b.lat, b.lng], {
+            icon: L.divIcon({ className: '', html: '<div class="glow-dot"></div>', iconAnchor: [7, 7] })
+        }).addTo(map);
+
+        const label = L.marker([b.lat, b.lng], {
+            icon: L.divIcon({ className: 'clean-label', html: b.name, iconAnchor: [-18, 12] })
+        }).addTo(map);
+
+        marker.on('click', () => showBase(b.name + "基地", b.img, b.temp, b.plant, b.animal));
+    });
+
+    // 彈窗顯示邏輯：完全還原原本的隱藏/顯示邏輯與兩列佈局調整
+    function showBase(name, img, temp, plant, animal) {
+        document.getElementById('b-name').innerText = name;
+        document.getElementById('b-img').src = img;
+        document.getElementById('b-temp').innerText = temp;
+        
+        const plantBox = document.getElementById('stat-plant');
+        const animalBox = document.getElementById('stat-animal');
+
+        if (!plant || plant.trim() === "") {
+            plantBox.style.display = 'none';
+        } else {
+            plantBox.style.display = 'block';
+            document.getElementById('b-plant').innerHTML = plant;
+        }
+
+        if (!animal || animal.trim() === "") {
+            animalBox.style.display = 'none';
+        } else {
+            animalBox.style.display = 'block';
+            document.getElementById('b-animal').innerHTML = animal;
+        }
+
+        if (plantBox.style.display === 'none' || animalBox.style.display === 'none') {
+            if (plantBox.style.display !== 'none') plantBox.style.gridColumn = 'span 2';
+            if (animalBox.style.display !== 'none') animalBox.style.gridColumn = 'span 2';
+        } else {
+            plantBox.style.gridColumn = 'span 1';
+            animalBox.style.gridColumn = 'span 1';
+        }
+
+        document.getElementById('base-detail').style.display = 'flex';
+    }
+
+    function hideBase() { document.getElementById('base-detail').style.display = 'none'; }
+</script>
+</body>
+</html>
